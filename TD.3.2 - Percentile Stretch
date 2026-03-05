@@ -1,0 +1,48 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Geog 182B TD.3.2                                                            //  
+//                                                                             //
+// Always remember to use 'var' to define an object in JavaScript              //
+// Please use consistent indentation                                           //
+//                                                                             //
+// Please read the comments below                                              //
+// Mac Users:                                                                  //
+//    cmd+/ to comment or uncomment each line or block of code                 //
+// Windows Users:                                                              //   
+//    ctrl+/ to comment or uncomment each line or block of code                //
+// For both camps:                                                             //
+//    ctrl+shift+H to access keyboard shortcuts                                //  
+/////////////////////////////////////////////////////////////////////////////////
+
+// Percentile Stretch example ////////////////////////////////////////////////////
+
+// Image over UCLA
+var i = ee.Image('LANDSAT/LC08/C02/T1_TOA/LC08_041036_20160926')
+
+// Zoom in to this image
+Map.centerObject(i,7)
+
+// Calculate image statistics inside the map window
+var pct = i.reduceRegion({
+  reducer: ee.Reducer.percentile([10, 90]), 
+  geometry: Map.getBounds(true), 
+  scale: Map.getScale(),
+})
+
+// Define Visualization parameters
+var visParams = {
+  bands: ['B5', 'B4', 'B3'], 
+  min: [
+    pct.get('B5_p10').getInfo(), 
+    pct.get('B4_p10').getInfo(), 
+    pct.get('B3_p10').getInfo()
+  ],
+  max: [
+    pct.get('B5_p90').getInfo(), 
+    pct.get('B4_p90').getInfo(), 
+    pct.get('B3_p90').getInfo()
+  ]
+}
+
+// Add image to map window
+Map.addLayer(i, {}, 'Original')
+Map.addLayer(i, visParams, 'Percentile Stretched')
