@@ -1,0 +1,129 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Assignemnt #6                                                              //
+// Benjamin Anderson                                                           //
+// Dr. Zhou                                                                    //
+// GEOG 182B                                                                   //
+// 19 Feb 2026                                                                 //
+/////////////////////////////////////////////////////////////////////////////////
+
+// Trend analysis of forest health in Black Canyon of the Gunnison National Park
+
+//Black Canyon NP ROI////////////////////////////////////////////////////////////
+// Using this for efficient analysis
+var roi = ee.Geometry.Rectangle(
+  [-107.810, 38.535, -107.640, 38.625])  //[w, s, e, n]
+// Using this for clipped visualization
+var parks = ee.FeatureCollection("WCMC/WDPA/current/polygons")
+var roi2 = parks.filter(ee.Filter.stringContains('NAME', 'Black Canyon')).geometry()
+Map.centerObject(roi, 12)
+
+// Trend Analysis ///////////////////////////////////////////////////////////////      
+// This function adds a band representing the image timestamp
+function addTimeBand(image) {
+  return image.addBands(image.metadata('system:time_start')
+    // Convert milliseconds to years
+    .divide(1000 * 60 * 60 * 24 * 365))
+}
+
+// Load MODIS collection and map the time band function over it
+var collection = ee.ImageCollection('MODIS/006/MYD13A1')
+  .filterDate('2010-01-01', '2019-12-31')
+  // Add a time band to each image in the collection
+  .filterBounds(roi)
+  .map(addTimeBand)
+  
+// Define visualization parameters
+// Vegetation growth is usually considered good
+// So we will use green to represent increasing trend and red to represent decreasing trend
+var vizParams = {min: -40, max: 40, palette: ['red', 'black', 'green']}
+// min/max set symmetrically around 0 so that black always represents midpoint
+
+// Select the bands to model with the independent variable first
+var trend = collection.select(['system:time_start', 'EVI']) // Select X and Y variables 
+  .reduce(ee.Reducer.linearFit())
+  // Limit to roi
+  .clip(roi)
+
+// Use sens' slope to calculate non-parametric trend
+var sensSlp = collection.select(['system:time_start', 'EVI'])
+  .reduce(ee.Reducer.sensSlope())
+  .clip(roi)
+  
+// Result display
+Map.addLayer(trend.select(['scale']).clip(roi2), vizParams, 'Linear trend (parametric)')
+Map.addLayer(sensSlp.select(['slope']).clip(roi2), vizParams, 'Sens Slope trend (non-parametric)')
+
+
+// Trend Comparison Chart //////////////////////////////////////////////////////
+// Extract mean slope and intercept from linear fit over ROI
+var linScale = ee.Number(trend.select('scale').reduceRegion({
+  reducer: ee.Reducer.mean(), geometry: roi, scale: 1000
+}).get('scale'))
+
+var linOffset = ee.Number(trend.select('offset').reduceRegion({
+  reducer: ee.Reducer.mean(), geometry: roi, scale: 1000
+}).get('offset'))
+
+// Add the parametric linear fit as a band to each image
+var withLinear = collection.select('EVI').map(function(image) {
+  var t = ee.Number(image.get('system:time_start')).divide(1000 * 60 * 60 * 24 * 365)
+  var linearFit = linScale.multiply(t).add(linOffset)
+  return image.addBands(ee.Image.constant(linearFit).rename('LinearFit'))
+})
+
+// Comparison chart
+var compChart = ui.Chart.image.series({
+  imageCollection: withLinear.select(['EVI', 'LinearFit']),
+  region: roi,
+  reducer: ee.Reducer.mean(),
+  scale: 1000,
+  xProperty: 'system:time_start'
+})
+.setSeriesNames(['EVI', 'Linear Fit (Parametric)'])
+.setOptions({
+  title: 'Parametric vs Non-Parametric Trend Comparison: Black Canyon NP',
+  hAxis: {title: 'Date', titleTextStyle: {italic: false, bold: true}},
+  vAxis: {title: 'EVI', titleTextStyle: {italic: false, bold: true}},
+  lineWidth: 2,
+  colors: ['orange', 'green'],
+  curveType: 'function',
+  trendlines: {
+    0: {
+      color: 'blue',
+      lineWidth: 2,
+      opacity: 0.7,
+      showR2: true,
+      visibleInLegend: true,
+      labelInLegend: "Sen's Slope (Non-Parametric)"
+    }
+  }
+})
+print(compChart)
+
+//Analysis//////////////////////////////////////////////
+// A parametric analysis is most helpful when the pixel data have a clean and even 
+// distribution. It represents the "mean" method whereby outliers are not a problem 
+// in determining the trend.
+// A non-parametric analysis is most helpful when the pixel data values are not uniform.
+// It represents the "median" method whereby outliers produce less bias in the trendline
+// by being ruled out early on.
+// Examining the lines of the parametric and non-parametric trends, they are remarkably 
+// similar. This could mean a variety of things, including that the MODIS data I am using 
+// is already clean and there aren't many outliers. This means that the non-parametric 
+// approach using the median isn't necessary as there are not outliers that need to be ruled
+// out. On the other hand, the resolution for my chosen area might just be too low. We see 
+// that the pixel size relative to the Black Canyon boundaries makes for very few pixels
+// availabke for trend analysis. With a different sattelite product or larger ROI, there 
+// might be more different available to be captured between the parametric and non-parametric
+// methods.
+// Between the two, though, I prefer the parametric linear trend because it shows less zero/
+// black values and has higher contrast between the positive and negative values in the ROI. 
+// The time series charts are extraordinarily useful in observing the trend of forest health 
+// over time, in this instance using EVI as an indicator. Forest managers can easily change 
+// the date range to suit their desired observation goals. In my case, the park's forest EVI
+// has slightly improved over the given 10 year period. This can indicate a number of things,
+// including successful forest management initiatives, adequate water availability, and lack
+// of invasive species.
+// The map layer gives us a better idea of how the EVI change looks spatially. We see a central
+// area of red where EVI dropped, but overall more green value, especially in the east side of
+// the park.
