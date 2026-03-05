@@ -1,0 +1,119 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Assignemnt #8                                                              //
+// Benjamin Anderson                                                           //
+// Dr. Zhou                                                                    //
+// GEOG 182B                                                                   //
+// 5 Mar 2026                                                                 //
+/////////////////////////////////////////////////////////////////////////////////
+
+// Load image of transition edge of Penny Ice Cap, Baffin Island, Canada
+var BaffinIceCapPoi = [-66.07204742585742, 67.54488614574042]
+var roi = ee.Geometry.Point(BaffinIceCapPoi).buffer(8000).bounds()
+
+// I found my image by parsing through Sentinel 2 images in a different GEE script/file
+// It is hardcoded here
+var image = ee.Image('COPERNICUS/S2_SR_HARMONIZED/20210615T160829_20210615T161119_T19WFR')
+  .clip(roi)
+Map.centerObject(roi, 12)
+
+// Calculate Normalized Difference Snow Index (NDSI)
+// NDSI = (Green - SWIR) / (Green + SWIR)
+// High NDSI values indicate snow and ice, low NDSI values indicate rock/soil/veg
+var ndsi = image.normalizedDifference(['B3', 'B11']).rename('NDSI')
+
+// Compute NDSI Histogram
+// This is where I will derive my manual threshold
+var histogram = ndsi.reduceRegion({
+  reducer: ee.Reducer.histogram(255, null)
+    .combine('mean', null, true)
+    .combine('variance', null, true),
+  geometry: roi,
+  scale: 20,
+  bestEffort: true
+})
+print(Chart.image.histogram(ndsi, roi, 20))
+
+// Otsu's Segmentation Function (from TD.8.1)
+var otsu = function(histogram) {
+  var counts  = ee.Array(ee.Dictionary(histogram).get('histogram'))
+  var means   = ee.Array(ee.Dictionary(histogram).get('bucketMeans'))
+  var size    = means.length().get([0])
+  var total   = counts.reduce(ee.Reducer.sum(), [0]).get([0])
+  var sum     = means.multiply(counts).reduce(ee.Reducer.sum(), [0]).get([0])
+  var mean    = sum.divide(total)
+  var indices = ee.List.sequence(1, size)
+  var bss = indices.map(function(i) {
+    var aCounts = counts.slice(0, 0, i)
+    var aCount  = aCounts.reduce(ee.Reducer.sum(), [0]).get([0])
+    var aMeans  = means.slice(0, 0, i)
+    var aMean   = aMeans.multiply(aCounts)
+                    .reduce(ee.Reducer.sum(), [0]).get([0])
+                    .divide(aCount)
+    var bCount  = total.subtract(aCount)
+    var bMean   = sum.subtract(aCount.multiply(aMean)).divide(bCount)
+    return aCount.multiply(aMean.subtract(mean).pow(2))
+      .add(bCount.multiply(bMean.subtract(mean).pow(2)))
+  })
+
+  print(ui.Chart.array.values(ee.Array(bss), 0, means))
+  return means.sort(bss).get([-1])
+}
+
+// Apply Otsu's Threshold
+var otsuThreshold = otsu(histogram.get('NDSI_histogram'))
+print('Otsu Threshold:', otsuThreshold)
+
+// Manual threshold: 0.2 found from inspecting NDSI histogram where land drops off and ice picks up
+// Because the "valley" is reltively flat, I did not want to get too close to the high NDSI values
+var manualThreshold = 0.2
+print('Manual Threshold:', manualThreshold)
+
+//Binary Maps
+// 1 = ice cap, 0 = everything else
+var otsuBinary = ndsi
+  .select('NDSI')
+  .gt(otsuThreshold)
+  .eq(1)
+  .rename('Otsu_Ice')
+
+var manualBinary = ndsi
+  .select('NDSI')
+  .gt(manualThreshold)
+  .eq(1)
+  .rename('Manual_Ice')
+
+// Visualize binary maps
+Map.addLayer(otsuBinary,   {min: 0, max: 1, palette: ['black', 'cyan']},  'Otsu Binary Ice Cap')
+Map.addLayer(manualBinary, {min: 0, max: 1, palette: ['black', 'blue']}, 'Manual Binary Ice Cap')
+
+// Masked Maps
+var otsuMasked   = otsuBinary.updateMask(otsuBinary)
+var manualMasked = manualBinary.updateMask(manualBinary)
+
+Map.addLayer(otsuMasked,   {palette: 'cyan'},  'Otsu Mask Ice Cap')
+Map.addLayer(manualMasked, {palette: 'blue'},  'Manual Mask Ice Cap')
+
+// Analysis and Comparison
+//
+// Observation: The difference between my binary layers of the two thresholding
+// techniques are remarkably similar, which is to be expected. The manual 
+// thresholding is a bit less sharp around the edges because its value is further
+// away from the ice.
+//
+// Accuracy: Otsu's segmentation is more objective, finding its threshold statistically
+// by maximizing the difference between the land cover classes, which reduces human bias. Manual thresholding
+// relies on histogram inspection and the judgment of me as an analyist, but it produces comparable
+// results here due to the decently clean NDSI distribution of ice vs. bare earth.
+//
+// Simplicity: Manual thresholding is simpler to implement and interpret. All I had to do was
+// inspect the histogram and pick a value that made sense between the two bumps of land cover class; 
+// albeit ice in this image is much more prominent. Otsu requires a full BSS function (as provided by
+// Dr. Zhou) and is harder to explain to a non-technical audience.
+//
+// Scalability: Otsu scales better across large areas and varying conditions
+// since it adapts automatically to each image's histogram. Manual thresholds are
+// image specific. A manual threshold value that works here may fail over a different 
+// ice cap, image date, or season, requiring repeated recalibration by the analyist.
+//
+// Note: after troubleshooting, I determined that the rogue white pixels in my binary images are simply null data
+// values, confirmed by inspecting the true color image
