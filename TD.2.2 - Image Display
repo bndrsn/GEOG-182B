@@ -1,0 +1,54 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Geog 182B TD.2.2                                                            //  
+//                                                                             //
+// Always remember to use 'var' to define an object in JavaScript              //
+// Please use consistent indentation                                           //
+//                                                                             //
+// Please read the comments below                                              //
+// Mac Users:                                                                  //
+//    cmd+/ to comment or uncomment each line or block of code                 //
+// Windows Users:                                                              //   
+//    ctrl+/ to comment or uncomment each line or block of code                //
+// For both camps:                                                             //
+//    ctrl+shift+H to access keyboard shortcuts                                //  
+/////////////////////////////////////////////////////////////////////////////////
+
+// Image Display example //////////////////////////////////////////////////////// 
+
+// Define Area of interest
+
+  // Import level 1 admistrative boundaries
+  var gbl1 = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level1")
+  
+  // Filter to CA boundary
+  var caGeom = ee.Feature(gbl1.filter(ee.Filter.eq('ADM1_NAME','California')).first())
+    .geometry()
+
+// Load Image Collection and filter by space and time to make analysis efficient
+
+  // Reduce the image collection covering the entire globe to your area of interest
+  var landsat = ee.ImageCollection("LANDSAT/LC08/C02/T1")
+    // Always use the filter that removes the higher percentage of data first
+    .filterDate('2016-01-01', '2017-01-01')
+    // Filter images in an area of interest
+    .filterBounds(caGeom)
+  
+  // A simple approach to make an image mosaic
+  // We will introduce more sophiscated approaches down the road
+  var composite = ee.Algorithms.Landsat.simpleComposite({
+    collection: landsat,
+    asFloat: true
+  })
+
+// Prepare image mosaic for display
+
+  // Define visualization parameters
+  var rgbVis = {bands: ["B4", "B3", "B2"], min:0, max: 0.3}
+  var nirVis = {bands: ["B5", "B4", "B3"], min:0, max: [0.5, 0.3, 0.3]}
+  
+   // Add image mosaics to Google map to display
+  Map.addLayer(composite.clip(caGeom), rgbVis, "RGB")
+  Map.addLayer(composite.clip(caGeom), nirVis, "False Color")
+  
+  //The number defines the zoom level, try a few number to get a feel
+  Map.centerObject(caGeom, 4)
