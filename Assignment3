@@ -1,0 +1,102 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Assignemnt #3                                                               //
+// Benjamin Anderson                                                           //
+// Dr. Zhou                                                                    //
+// GEOG 182B                                                                   //
+// 28 Jan 2026                                                                 //
+/////////////////////////////////////////////////////////////////////////////////
+
+// Image over UCLA
+var i = ee.Image('LANDSAT/LC08/C02/T1_TOA/LC08_041036_20160926')
+
+// Zoom in to this image
+Map.centerObject(i,7)
+
+// Standard Deviation Stretch (provided) ///////////////////////////////////////////
+
+// Calculate image statistics inside the map window
+var mean = i.reduceRegion({
+  reducer: ee.Reducer.mean(), 
+  geometry: Map.getBounds(true), 
+  scale: Map.getScale(),
+})
+var stdDev = i.reduceRegion({
+  reducer: ee.Reducer.sampleStdDev(), 
+  geometry: Map.getBounds(true), 
+  scale: Map.getScale(),
+})
+
+// Define Visualization parameters
+var visParams = {
+  bands: ['B4', 'B3', 'B2'], 
+  // Mean subtract One Standard Deviation
+  min: [
+    ee.Number(mean.get('B4')).subtract(stdDev.get('B4')).getInfo(), 
+    ee.Number(mean.get('B3')).subtract(stdDev.get('B3')).getInfo(), 
+    ee.Number(mean.get('B2')).subtract(stdDev.get('B2')).getInfo()
+  ],
+  // Mean plus One Standard Deviation
+  max: [
+    ee.Number(mean.get('B4')).add(stdDev.get('B4')).getInfo(), 
+    ee.Number(mean.get('B3')).add(stdDev.get('B3')).getInfo(), 
+    ee.Number(mean.get('B2')).add(stdDev.get('B2')).getInfo()
+  ]
+}
+
+// Square Root Stretch ///////////////////////////////////////////
+var sqrtImage = i.sqrt() // This is where the square root is applied
+
+
+// Compute percentiles on the square root image
+var pctSqrt = sqrtImage.reduceRegion({
+  reducer: ee.Reducer.percentile([9, 75]), // Matches the 68% difference (1 stdev away) of Gaussian
+  // The square root stretch favors values at the low end
+  // My reducer isloates the bulk of pixel values from the large tail at the upper end
+  // My values are tailored to land features
+  geometry: Map.getBounds(true),
+  scale: Map.getScale(),
+})
+
+// Visualization parameters
+var visSqrtParams = {
+  bands: ['B4', 'B3', 'B2'],
+  min: [
+    pctSqrt.get('B4_p9').getInfo(),
+    pctSqrt.get('B3_p9').getInfo(),
+    pctSqrt.get('B2_p9').getInfo()
+  ],
+  max: [
+    pctSqrt.get('B4_p75').getInfo(),
+    pctSqrt.get('B3_p75').getInfo(),
+    pctSqrt.get('B2_p75').getInfo()
+  ]
+}
+
+// Print sqrt upper and lower % statistics by band
+print(pctSqrt);
+print('B4 sqrt percentiles')
+print(pctSqrt.get('B4_p9'))
+print (pctSqrt.get('B4_p75'))
+
+print('B3 sqrt percentiles')
+print(pctSqrt.get('B3_p9'))
+print (pctSqrt.get('B3_p75'))
+
+print('B2 sqrt percentiles')
+print(pctSqrt.get('B2_p9'))
+print (pctSqrt.get('B2_p75'))
+
+// Add image to map window
+Map.addLayer(i, visParams, 'Gaussian Stretched')
+Map.addLayer(sqrtImage, visSqrtParams, 'Square Root Percent Stretch')
+
+// Result comparison ///////////////////////////
+// The two stretching techniques are useful in creating high-contrast imagery where land type can be easily discerned and analyzed. 
+// Not one is necessarily suprtior over the other; they both serve their own purposes.
+// In many use cases, both could be viable options. The Gaussian stretch leans darker, the square root lighter.
+// The Gaussian stretch displays stark contrast in urban land cover versus vegetation.
+// For example, notice the bright white urban areas of LA popping out against the near-black Santa Monica Mountains.
+// This stretch is more useful for comparison between land cover types.
+// The square root stretch is closer to a true color image, with less dramatic contrast between land types.
+// Desert features are too bright for useful analysis, but other land cover types outside of the LA metro area like cropland are well-lit
+// This stretch is more useful for comparison within land cover types. 
