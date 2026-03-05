@@ -1,0 +1,86 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Geog 182B TD.1.1                                                            //  
+//                                                                             //
+// Always remember to use 'var' to define an object in JavaScript              //
+// Please use consistent indentation                                           //
+//                                                                             //
+// Please read the comments below                                              //
+// Mac Users:                                                                  //
+//    cmd+/ to comment or uncomment each line or block of code                 //
+// Windows Users:                                                              //   
+//    ctrl+/ to comment or uncomment each line or block of code                //
+// For both camps:                                                             //
+//    ctrl+shift+H to access keyboard shortcuts                                //  
+/////////////////////////////////////////////////////////////////////////////////
+
+// All the javascript you need to know (almost)
+
+// Client side objects //////////////////////////////////////////////////////////
+
+// Define a string
+var string = 'Hello, World!'
+print(string)
+
+// Define a number
+// var number = 1
+// print(number)//, 'client side number')
+
+// Define a list of numbers 
+// List index start from 0 like this [0,1,2]
+// var list = [1.23, 8, -3]
+// Pay attention to how the object in the list is retrieved
+// print(list[2])//,'Third item in client side list')
+
+// Define a dictionary to store values
+// var dictionary = {
+//   a: 'Hello',
+//   b: 10,
+//   c: 0.1343,
+//   d: list
+// }
+// Pay attention to how the entry in the dictionary is retrieved
+// print(dictionary.b)//,'Second item in client side dictionary')
+
+// Define a date
+// var date = '2015-6-1'
+
+// Server side objects //////////////////////////////////////////////////////////
+
+// Coerce client side string to server side string
+// var eeString = ee.String(string)
+// print(eeString)//,'Server side string')
+
+// Coerce client side number to server side number
+// var eeNumber = ee.Number(number)
+// print(eeNumber)//, 'Server side number')
+
+// Coerce client side list to server side list
+// var eeList = ee.List(list)
+// Pay attention to how the object in the list is retrieved
+// print(eeList.get(1))//, 'Second item in server side list')
+
+// Coerce client side list to server side array
+// var arrList = ee.Array(list)
+// Pay attention to how the object in the list is retrieved
+// print(arrList.get([0]))//, 'First item in server side array')
+
+// Coerce client side dictionary to server side dictionary
+// var eeDictionary = ee.Dictionary(dictionary)
+// Pay attention to how the entry in the dictionary is retrieved
+// print(eeDictionary.get('b'))//, 'Second item in server side dictionary'
+
+// Coerce client side date to server side date
+// var eeDate0 = ee.Date(date)
+// print(eeDate0)
+
+// Alternative way to construct server side date
+// var eeDate1 = ee.Date.fromYMD(2015, 6, 1)
+// print(eeDate1)
+
+// Round a list of numbers
+// Your first GEE function
+// function rdNum(number) {
+//   return ee.Number(number).round()
+// }
+// var numLst = ee.List([6.78, 7.58, 9.45, 3.21])
+// print(numLst.map(rdNum))
