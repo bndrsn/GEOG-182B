@@ -1,0 +1,49 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Assignemnt #2                                                               //
+// Benjamin Anderson                                                           //
+// Dr. Zhou                                                                    //
+// GEOG 182B                                                                   //
+// 22 Jan 2026                                                                 //
+/////////////////////////////////////////////////////////////////////////////////
+
+// Define Area of interest
+
+  // Import level 1 admistrative boundaries
+  var gbl1 = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level1")
+  
+  // Filter to CA boundary
+  var caGeom = ee.Feature(gbl1.filter(ee.Filter.eq('ADM1_NAME','California')).first())
+    .geometry()
+
+// Load Image Collection and filter by space and time to make analysis efficient
+
+  // Reduce the image collection covering the entire globe to your area of interest
+  var landsat = ee.ImageCollection("LANDSAT/LC08/C02/T1")
+    // Always use the filter that removes the higher percentage of data first
+    .filterDate('2016-01-01', '2017-01-01')
+    // Filter images in an area of interest
+    .filterBounds(caGeom)
+  
+  // A simple approach to make an image mosaic
+  // We will introduce more sophiscated approaches down the road
+  var composite = ee.Algorithms.Landsat.simpleComposite({
+    collection: landsat,
+    asFloat: true
+  })
+
+// Prepare image mosaic for display
+
+  // Define visualization parameters
+  var rgbVis = {  //for composite manipulation
+  bands: ["B4", "B3", "B2"],  // true color
+  min: [0.03, 0.05, 0.05],
+  max: [0.08, 0.10, 0.12]
+};
+  var TrueRgbVis = {bands: ["B4", "B3", "B2"], min:0, max: 0.3} //for inspector reference
+  
+   // Add image mosaics to Google map to display
+  Map.addLayer(composite.clip(caGeom), rgbVis, "RGB")
+  // Map.addLayer(composite.clip(caGeom), TrueRgbVis, "True RGB")
+  
+  //The number defines the zoom level, try a few number to get a feel
+  Map.centerObject(caGeom, 5)
