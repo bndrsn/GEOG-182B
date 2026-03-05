@@ -1,0 +1,78 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Geog 182B TD.6.2                                                            //  
+//                                                                             //
+// Always remember to use 'var' to define an object in JavaScript              //
+// Please use consistent indentation                                           //
+//                                                                             //
+// Please read the comments below                                              //
+// Mac Users:                                                                  //
+//    cmd+/ to comment or uncomment each line or block of code                 //
+// Windows Users:                                                              //   
+//    ctrl+/ to comment or uncomment each line or block of code                //
+// For both camps:                                                             //
+//    ctrl+shift+H to access keyboard shortcuts                                //  
+/////////////////////////////////////////////////////////////////////////////////
+
+// Night light trend analysis ////////////////////////////////////////////////////
+
+// This function adds a band representing the image timestamp
+function addTimeBand(image) {
+  return image.addBands(image.metadata('system:time_start')
+    // Convert milliseconds from epoch to years to aid in
+    // interpretation of the following trend calculation
+    .divide(1000 * 60 * 60 * 24 * 365))
+}
+
+// Define region of interest
+var roi = lv.buffer(30000).bounds()
+
+// Focus in the Las Vegas area
+var filIc = iC
+  // Add image acquisition time as another image band
+  .map(addTimeBand)
+  // Select X and Y variables 
+  .select(['system:time_start', 'stable_lights'])
+
+// Plot image time series
+// Define the chart and print it to the console.
+var chart =
+  ui.Chart.image
+    .series({
+      imageCollection: filIc,
+      region: roi,
+      reducer: ee.Reducer.mean(),
+      scale: 927.67,
+      xProperty: 'system:time_start'
+    })
+    .setSeriesNames(['stable_lights'])
+    .setOptions({
+      title: 'Stable lights over time',
+      hAxis: {title: 'Date', titleTextStyle: {italic: false, bold: true}},
+      vAxis: {
+        title: 'Stable Lights',
+        titleTextStyle: {italic: false, bold: true}
+      },
+      lineWidth: 5,
+      colors: ['e37d05'],
+      curveType: 'function'
+    })
+print(chart)
+
+// Use linear model to calculate parametric trend
+var linTrnd = filIc
+  // Apply linear regression to time series for each pixel
+  .reduce(ee.Reducer.linearFit())
+  // Limit to Las Vegas, NV
+  .clip(roi)
+  
+// Use sens' slope to calculate non-parametric trend
+var sensSlp = filIc.reduce(ee.Reducer.sensSlope()).clip(lv.buffer(30000).bounds())
+
+// Define visualization parameters
+// Urban sprawl is usually considered bad
+// So we will use red to represent increasing trend and green to represent decreasing trend
+var vizParams = {min: -1, max: 1, palette: ['green','black','red']}
+
+// Result display
+Map.addLayer(linTrnd.select(['scale']), vizParams, 'Linear trend')
+Map.addLayer(sensSlp.select(['slope']), vizParams, 'Sens Slope trend')
