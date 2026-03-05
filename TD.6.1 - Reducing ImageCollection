@@ -1,0 +1,49 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Geog 182B TD.6.1                                                            //  
+//                                                                             //
+// Always remember to use 'var' to define an object in JavaScript              //
+// Please use consistent indentation                                           //
+//                                                                             //
+// Please read the comments below                                              //
+// Mac Users:                                                                  //
+//    cmd+/ to comment or uncomment each line or block of code                 //
+// Windows Users:                                                              //   
+//    ctrl+/ to comment or uncomment each line or block of code                //
+// For both camps:                                                             //
+//    ctrl+shift+H to access keyboard shortcuts                                //  
+/////////////////////////////////////////////////////////////////////////////////
+
+// Trend Analysis ////////////////////////////////////////////////////////////////     
+
+// This function adds a band representing the image timestamp
+function addTimeBand(image) {
+  return image.addBands(image.metadata('system:time_start')
+    // Convert milliseconds from epoch to years to aid in
+    // interpretation of the following trend calculation
+    .divide(1000 * 60 * 60 * 24 * 365))
+}
+
+// Load a MODIS collection, filter to several years of 16 day mosaics,
+// and map the time band function over it
+var collection = ee.ImageCollection('MODIS/006/MYD13A1')
+  .filterDate('2004-01-01', '2010-10-31')
+  // Add a time band to each image in the collection
+  // For a time series analysis using satellite data
+  // Y: Satellite observations
+  // X: Time of image acquisition
+  .map(addTimeBand)
+
+// Select the bands to model with the independent variable first
+var trend = collection.select(['system:time_start', 'EVI']) // Select X and Y variables 
+  // Compute the linear trend over time
+  // This will output a two band image: scale (slope) and offset (intercept)
+  // Y = A*X + B if you have multiple Y and X observations you can solve for A and B
+  .reduce(ee.Reducer.linearFit())
+
+// Define visualization parameters
+// Output image only have two bands, we will use the scale band twice to render a RGB image
+var vizParams = {min: 0, max: [-100, 100, 10000], bands: ['scale', 'scale', 'offset']}
+
+// Display the trend with increasing slopes in green, decreasing in red
+Map.setCenter(-96.943, 39.436, 5)
+Map.addLayer(trend, vizParams, 'EVI trend')  
