@@ -1,0 +1,145 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Geog 182B TD.7.3                                                            //  
+//                                                                             //
+// Always remember to use 'var' to define an object in JavaScript              //
+// Please use consistent indentation                                           //
+//                                                                             //
+// Please read the comments below                                              //
+// Mac Users:                                                                  //
+//    cmd+/ to comment or uncomment each line or block of code                 //
+// Windows Users:                                                              //   
+//    ctrl+/ to comment or uncomment each line or block of code                //
+// For both camps:                                                             //
+//    ctrl+shift+H to access keyboard shortcuts                                //  
+/////////////////////////////////////////////////////////////////////////////////
+
+// Image Rescale example /////////////////////////////////////////////////////////
+
+// Load a high-resolution NAIP image.
+var image = ee.Image('projects/ee-bodaciouszhou/assets/floatRaster') //Decimal raster
+//var image = ee.Image('USDA/NAIP/DOQQ/m_3712213_sw_10_1_20140613') //Integer raster
+
+// Zoom to San Francisco, display.
+Map.setCenter(-122.466123, 37.769833, 17)
+Map.addLayer(image, {max: 1}, 'image') //Decimal raster
+//Map.addLayer(image, {max: 255}, 'image') //Integer raster
+
+var prj = image.projection()
+// Get the NIR band.
+var nir = image
+  // Rescale pixel value range from 0-1 to 0-255
+  .multiply(255) //Decimal raster
+  // Convert floating point raster to integer raster ⌊ ⌋
+  .int() //Decimal raster 
+  .select('N')
+
+// Compute the gray-level co-occurrence matrix (GLCM), get contrast.
+// https://medium.com/@girishajmera/feature-extraction-of-images-using-glcm-gray-level-cooccurrence-matrix-e4bda8729498
+var glcm = nir.glcmTexture({size: 1})
+var bn = glcm.bandNames().remove('N_maxcorr')
+
+var img = glcm.select(bn)
+var geom = img.geometry()
+// Min pixel value
+var min = img
+  .reduceRegion({
+    reducer: ee.Reducer.min(),
+    geometry: geom,
+    scale: 1,
+    bestEffort: true,
+    tileScale: 16
+  })
+print(min)
+
+// Max pixel value
+var max = img
+  .reduceRegion({
+    reducer: ee.Reducer.max(),
+    geometry: geom,
+    scale: 1,
+    bestEffort: true,
+    tileScale: 16
+  })
+print(max)
+var minImg = min.toImage(bn).clip(geom)
+print(minImg)
+var maxImg = max.toImage(bn).clip(geom)
+var glcm = img
+  .subtract(minImg)
+  .divide(ee.Image(maxImg).subtract(minImg))
+  // Force the next reprojection to aggregate instead of resampling.
+   .reduceResolution({
+      reducer: ee.Reducer.mean(),
+      //bestEffort: true
+      maxPixels: 10000
+    })
+    // Request the data at the defined scale and projection
+    .reproject({
+      crs: prj.atScale(1)
+    })
+Map.addLayer(glcm, {bands: ['N_asm'], min: 0, max: 1}, 'N_asm', false)
+Map.addLayer(glcm, {bands: ['N_contrast'], min: 0, max: 1}, 'N_contrast', false)
+Map.addLayer(glcm, {bands: ['N_corr'], min: 0, max: 1}, 'N_corr', false)
+Map.addLayer(glcm, {bands: ['N_var'], min: 0, max: 1}, 'N_var', false)
+Map.addLayer(glcm, {bands: ['N_idm'], min: 0, max: 1}, 'N_idm', false)
+Map.addLayer(glcm, {bands: ['N_savg'], min: 0, max: 1}, 'N_savg', false)
+Map.addLayer(glcm, {bands: ['N_svar'], min: 0, max: 1}, 'N_svar', false)
+Map.addLayer(glcm, {bands: ['N_sent'], min: 0, max: 1}, 'N_sent', false)
+Map.addLayer(glcm, {bands: ['N_ent'], min: 0, max: 1}, 'N_ent', false)
+Map.addLayer(glcm, {bands: ['N_dvar'], min: 0, max: 1}, 'N_dvar', false)
+Map.addLayer(glcm, {bands: ['N_dent'], min: 0, max: 1}, 'N_dent', false)
+Map.addLayer(glcm, {bands: ['N_imcorr1'], min: 0, max: 1}, 'N_imcorr1', false)
+Map.addLayer(glcm, {bands: ['N_imcorr2'], min: 0, max: 1}, 'N_imcorr2', false)
+Map.addLayer(glcm, {bands: ['N_diss'], min: 0, max: 1}, 'N_diss', false)
+Map.addLayer(glcm, {bands: ['N_inertia'], min: 0, max: 1}, 'N_inertia', false)
+Map.addLayer(glcm, {bands: ['N_shade'], min: 0, max: 1}, 'N_shade', false)
+Map.addLayer(glcm, {bands: ['N_prom'], min: 0, max: 1}, 'N_prom', false)
+
+// Define a function to display histogram of a band
+function showHistogram(image, name, hTitle, band, color, scale) {
+  var options = {
+    title: 'Histogram of ' + name,
+    titleTextStyle: {
+      italic: false, 
+      bold: true, 
+      fontSize: 25
+    },
+    fontSize: 20,
+    hAxis: {
+      title: hTitle,
+      titleTextStyle: {
+        italic: true, 
+        bold: true, 
+        fontSize: 23
+      },
+    },
+    vAxis: {
+      title: 'Count of ' + hTitle,
+      titleTextStyle: {
+        italic: true, 
+        bold: true, 
+        fontSize: 23
+      },
+    },
+    legend: {
+      position: 'none',
+    },
+    series: {0: {color: color}}
+  }
+    
+  var histogram = ui.Chart.image.histogram({
+    image: image.select(band),
+    region: image.geometry(),
+    maxBuckets: Math.pow(2, 8),
+    scale: scale,
+  })
+  
+  print(histogram
+    .setSeriesNames([band])
+    .setOptions(options)
+  )
+}
+
+// Show histograms
+showHistogram(image, 'Floating point raster', 'Reflectance like response', 'R', 'red', 100) //Decimal raster
+//showHistogram(image, 'DN raster', 'DN', 'R', 'red', 100) //Integer raster
