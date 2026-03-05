@@ -1,0 +1,64 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Geog 182B TD.4.2                                                            //  
+//                                                                             //
+// Always remember to use 'var' to define an object in JavaScript              //
+// Please use consistent indentation                                           //
+//                                                                             //
+// Please read the comments below                                              //
+// Mac Users:                                                                  //
+//    cmd+/ to comment or uncomment each line or block of code                 //
+// Windows Users:                                                              //   
+//    ctrl+/ to comment or uncomment each line or block of code                //
+// For both camps:                                                             //
+//    ctrl+shift+H to access keyboard shortcuts                                //  
+/////////////////////////////////////////////////////////////////////////////////
+
+// Shadow Removal example ////////////////////////////////////////////////////////
+
+// Define an area of interest
+
+  // Import level 2 admistrative boundaries
+  var gbl2 = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level2")
+  
+  // Filter to LA county boundary
+  var laGeom = ee.Feature(gbl2.filter(ee.Filter.eq('ADM2_NAME','Los Angeles')).first())
+    .geometry()
+
+// Load Image Collection and filter by space and time to make analysis efficient
+
+  // Reduce the image collection covering the entire globe to your area of interest
+  var landsat = ee.ImageCollection("LANDSAT/LC08/C02/T1")
+    // Always use the filter that removes the higher percentage of data first
+    .filterDate('2016-01-01', '2017-01-01')
+    // Filter images in an area of interest
+    .filterBounds(laGeom)
+  
+  // A simple approach to make an image mosaic
+  // We will introduce more sophiscated approaches down the road
+  var composite = ee.Algorithms.Landsat.simpleComposite({
+    collection: landsat,
+    asFloat: true
+  })
+
+// Prepare image mosaic for display
+
+  // Define visualization parameters
+  var rgbVis = {bands: ["B4", "B3", "B2"], min:0, max: 0.2}
+  
+  // Optional step
+  // Calculate image statistics for Band 5 to determine the correction factor after band ratio
+  var mean = composite
+    .select('B5')
+    .reduceRegion({
+      reducer: ee.Reducer.mean(), 
+      geometry: Map.getBounds(true), 
+      scale: Map.getScale(),
+    })
+
+  // Add orignal image to the map window as reference
+  Map.addLayer(composite.clip(laGeom), rgbVis, "RGB")
+  // Add terrain corrected image to the map window for comparison
+  Map.addLayer(composite.divide(composite.select('B5')).multiply(ee.Number(mean.get('B5'))).clip(laGeom), rgbVis, "RGB remove shadow")
+  
+  //The number defines the zoom level, try a few number to get a feel
+  Map.centerObject(laGeom, 10)
