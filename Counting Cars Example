@@ -1,0 +1,91 @@
+// Counting cars example ////////////////////////////////////////////////////////
+//Example
+
+// Study setup
+
+var roi = ee.Geometry.Polygon([
+  [[-121.945949, 37.492398], [-121.944557, 37.492828], [-121.943983, 37.491656], [-121.945356, 37.49123], [-121.945949, 37.492398]]]);
+Map.addLayer(roi, {}, 'Area of Interest');
+// Define Location
+Map.centerObject(roi, 18);
+
+// Import NAIP Imagery Collection and filter by date
+var naip = ee.ImageCollection('USDA/NAIP/DOQQ')
+  .filterDate('2020-01-01', '2020-12-31')
+  .filterBounds(roi);
+  //.filterBounds(ee.Geometry.Rectangle(-120.06426, 43.59767, -119.92332, 43.51644 ));
+
+// Mosaic NAIP collection
+var naipM = naip.mosaic().clip(roi);
+
+// Calculate NDVI
+var ndvi = naipM.normalizedDifference(['N', 'R']);
+
+var ndvi_palette = 'FFFFFF, CE7E45, DF923D, F1B555, FCD163, 99B718, 74A901, 66A000, 529400,' +
+    '3E8601, 207401, 056201, 004C00, 023B01, 012E01, 011D01, 011301';
+
+// Define the texture component
+var texture = ndvi.reduceNeighborhood({
+  reducer: ee.Reducer.stdDev(),
+  kernel: ee.Kernel.diamond(1),
+});
+
+// Stack NAIP NDVI and Texture
+var comp = naipM
+  .addBands(ndvi)
+  .addBands(texture);
+
+//Map.centerObject(roi, 15);
+// Image
+Map.addLayer(naipM, {bands: ['N', 'B', 'G']}, 'NAIP input imagery', true);
+
+// NDVI
+Map.addLayer(ndvi, {min: -1, max: 1, palette: ndvi_palette}, 'NDVI', false);
+
+// Texture
+Map.addLayer(texture, {min: 0, max: 0.1}, 'SD of NDVI', false);
+
+// Get training
+var points = cars.merge(notCars);
+
+// Get band names
+var bands = comp.bandNames();
+// Prepare training data
+var training = comp.sampleRegions(points, ['class'], 2);
+//print('training', training);
+// Export the FeatureCollection.
+Export.table.toDrive({
+  collection: training,
+  description: 'training',
+  fileFormat: 'KML'
+});
+// Setup random forest classifier
+var classifier = ee.Classifier.smileRandomForest(200)
+//var classifier = ee.Classifier.cart()
+  .train(training, 'class', bands);
+//print('classifier', classifier);
+// Perform random forest classification
+var classified = comp.classify(classifier);
+// Define a palette for the classification.
+var palette = [
+  //'______', // 1: notCars
+  '0000FF', // 0: cars
+];
+// Mask the areas with no tree cover
+var mask = classified.eq(0);
+// Display the classification results (class is defined in the color palette above)
+Map.addLayer(classified.updateMask(mask), {palette: palette, min: 0, max: 1}, 'classification', false);
+
+// Extract vector
+var car_ctrd = classified.updateMask(mask).reduceToVectors({
+  scale: 2,
+  geometryType: 'centroid',
+  eightConnected: false,
+  bestEffort: false,
+  maxPixels: 1e9,
+  tileScale: 1, 
+  })//.map(function(feature){return feature.centroid();})
+  ;
+Map.addLayer(car_ctrd, {color: '00FF00'}, 'Cars', false);
+
+print('Number of cars in parking lot: ', car_ctrd.size());
