@@ -1,0 +1,126 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Geog 182B TD.8.1                                                            //  
+//                                                                             //
+// Always remember to use 'var' to define an object in JavaScript              //
+// Please use consistent indentation                                           //
+//                                                                             //
+// Please read the comments below                                              //
+// Mac Users:                                                                  //
+//    cmd+/ to comment or uncomment each line or block of code                 //
+// Windows Users:                                                              //   
+//    ctrl+/ to comment or uncomment each line or block of code                //
+// For both camps:                                                             //
+//    ctrl+shift+H to access keyboard shortcuts                                //  
+/////////////////////////////////////////////////////////////////////////////////
+
+// Otsu's Image Segmentation example in Otsu /////////////////////////////////////
+
+// Import level 1 admistrative boundaries
+var gbl2 = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level2")
+
+// Test if this region is unique to decide on filtering strategy
+print(gbl2.filter(ee.Filter.eq('ADM2_NAME','Ootusi')).size(), 'No. of Ootusi in the world')
+
+// Filter to the Otsu city boundary's bounding box
+var otsuGeom = ee.Feature(gbl2
+    // Filter to Siga Prefecture, not necessary since the District is unique
+    //.filter(ee.Filter.eq('ADM1_NAME','Siga'))
+    // Filter to Ootusi District (Otsu City)
+    .filter(ee.Filter.eq('ADM2_NAME','Ootusi'))
+    .first()
+  )
+  .geometry() // Retrieve the geometry from the vector
+  .buffer(10000) // Try commenting out the buffer and see what happens?
+  .bounds() // Use bounding box to make code more efficient
+
+// // This code can help you pick one image from the collection. But your miles may vary!
+// print(iC
+//   // Filter by the path and row
+//   .filter(ee.Filter.and(ee.Filter.eq('WRS_ROW', 36), ee.Filter.eq('WRS_PATH', 109)))
+//   .sort('CLOUD_COVER')
+//   .first()
+// )
+
+// Load the image from the archive.
+var image = ee.Image('LANDSAT/LC08/C02/T1_L2/LC08_109036_20221026').clip(otsuGeom)
+// Define visualization parameters in an object literal.
+var vizParams = {bands: ['SR_B5', 'SR_B4', 'SR_B3'], min: 5000, max: 15000, gamma: 1.3}
+
+// Center the map on the image and display.
+Map.centerObject(image, 10)
+Map.addLayer(image, vizParams, 'Landsat 8 false color composite')
+
+// Compute the histogram of the NIR band. The mean and variance are only FYI.
+var histogram = image.select('SR_B5').reduceRegion({
+  reducer: ee.Reducer.histogram(255, 2)
+      .combine('mean', null, true)
+      .combine('variance', null, true), 
+  geometry: otsuGeom, 
+  scale: 30,
+  bestEffort: true
+})
+print(histogram)
+
+// Chart the histogram
+print(Chart.image.histogram(image.select('SR_B5'), otsuGeom, 30))
+
+// Return the DN that maximizes interclass variance in B5 (in the region).
+var otsu = function(histogram) {
+  // Read the number of pixel in each bin and save it as an array
+  var counts = ee.Array(ee.Dictionary(histogram).get('histogram'))
+  // Retrieve the mean value for each bin in the histogram
+  var means = ee.Array(ee.Dictionary(histogram).get('bucketMeans'))
+  // Calculate total number of bins
+  var size = means.length().get([0])
+  // Add all the tally in each bin up to get the total pixel count
+  var total = counts.reduce(ee.Reducer.sum(), [0]).get([0])
+  // Use the mean of each bin to multiply with the count to get the sum
+  var sum = means.multiply(counts).reduce(ee.Reducer.sum(), [0]).get([0])
+  // Use the sum to divide the total pixel count to get the global mean
+  var mean = sum.divide(total)
+  
+  // This part is a candidate for major optimization
+  var indices = ee.List.sequence(1, size)
+  
+  // Compute between sum of squares, where each mean partitions the data.
+  var bss = indices.map(function(i) {
+    // A peak or the left peak in the histogram
+    // Number of bins for class A
+    var aCounts = counts.slice(0, 0, i)
+    // Total number of bins for class A
+    var aCount = aCounts.reduce(ee.Reducer.sum(), [0]).get([0])
+    // Mean of class A for each bin
+    var aMeans = means.slice(0, 0, i)
+    // Mean of class A overall
+    var aMean = aMeans.multiply(aCounts)
+        .reduce(ee.Reducer.sum(), [0]).get([0])
+        .divide(aCount)
+    // B peak or the right peak in the histogram
+    // Total number of bins for class B
+    var bCount = total.subtract(aCount)
+    // Mean of class B overall
+    var bMean = sum.subtract(aCount.multiply(aMean)).divide(bCount)
+    // Plug in the BSS equation here
+    return aCount.multiply(aMean.subtract(mean).pow(2)).add(
+      bCount.multiply(bMean.subtract(mean).pow(2)))
+  })
+  
+  print(ui.Chart.array.values(ee.Array(bss), 0, means))
+  
+  // Return the mean value corresponding to the maximum BSS.
+  return means.sort(bss).get([-1])
+}
+
+// Retrieve the Otsu's segmentation derived threshold value
+var threshold = otsu(histogram.get('SR_B5_histogram'))
+print('threshold', threshold)
+
+// Perform thresholding to get a binary map of water vs. non-water
+var waterMask = image
+  .select('SR_B5')
+  .lt(threshold)
+  // If the automated approach is not yielding a good threshold
+  //.lt(?) // Plug in your own threshold here using the auto threshold as reference
+  
+// Visualize the result with water pixels masked using blue color
+Map.addLayer(waterMask.updateMask(waterMask), {palette: 'blue'}, 'Waterbodies')
