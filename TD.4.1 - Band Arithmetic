@@ -1,0 +1,53 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Geog 182B TD.4.1                                                            //  
+//                                                                             //
+// Always remember to use 'var' to define an object in JavaScript              //
+// Please use consistent indentation                                           //
+//                                                                             //
+// Please read the comments below                                              //
+// Mac Users:                                                                  //
+//    cmd+/ to comment or uncomment each line or block of code                 //
+// Windows Users:                                                              //   
+//    ctrl+/ to comment or uncomment each line or block of code                //
+// For both camps:                                                             //
+//    ctrl+shift+H to access keyboard shortcuts                                //  
+/////////////////////////////////////////////////////////////////////////////////
+
+// Band Math example /////////////////////////////////////////////////////////////
+
+// Define a function to add NDVI as a new band to each image in the collection
+function addNdvi(image) { 
+  var ndvi = image.expression(
+    // NDVI equation
+    '(NIR - RED) / (NIR + RED)', 
+    // Dictionary for bands involved
+    {
+      'NIR': image.select('SR_B5'),
+      'RED': image.select('SR_B4')
+    }
+  )
+  // Change the name of newly generated image band to NDVI
+  .rename('NDVI')
+  return image
+    .addBands(ndvi)
+}
+
+// Filter ImageCollection and add NDVI band to each image in the filtered collection
+var subset = iC
+  // Notice I filtered boundary using a point
+  .filterBounds(Forest)
+  // Map the addNdvi function to a subset of image collection
+  .map(addNdvi)
+
+// Retrieve the last image from filtered ImageCollection
+var latestI = subset.sort('system:time_start', false).first()
+
+// Define image visualization parameters, note the max value here is 30000
+var vizParams = {bands: ['SR_B4','SR_B3','SR_B2'], max: 30000}
+// Add image to map window for visual reference to NDVI
+Map.addLayer(latestI, vizParams, 'True Color Image', false)
+
+// Define NDVI visualiztion parameters including color palette 
+var ndviParams = {min: 0, max: 0.5, palette: ['blue', 'white', 'green']}
+// Add the corresponding NDVI to map window
+Map.addLayer(latestI.select(['NDVI']), ndviParams, 'NDVI image')
