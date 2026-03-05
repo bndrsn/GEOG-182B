@@ -1,0 +1,27 @@
+// Create slider for comparison
+
+// Create two maps
+var leftMap = ui.Map();
+var rightMap = ui.Map();
+
+// Add the Pre-Fire layer to left map
+leftMap.addLayer(preImg.select('NBR'), nbrParams, 'Pre-fire NBR');
+leftMap.centerObject(Burn, 12);
+
+// Add the Square Root layer to right map
+rightMap.addLayer(postImg.select('NBR'), nbrParams, 'Post-fire NBR');
+
+// Create a SplitPanel to compare them
+var splitPanel = ui.SplitPanel({
+  firstPanel: leftMap,
+  secondPanel: rightMap,
+  orientation: 'horizontal',
+  wipe: true,
+  style: {stretch: 'both'}
+});
+
+ui.root.clear();
+ui.root.add(splitPanel);
+
+// Link the maps so they move together
+var linker = ui.Map.Linker([leftMap, rightMap]);
