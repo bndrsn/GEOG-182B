@@ -1,0 +1,180 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Geog 182B TD.5.1                                                            //  
+//                                                                             //
+// Always remember to use 'var' to define an object in JavaScript              //
+// Please use consistent indentation                                           //
+//                                                                             //
+// Please read the comments below                                              //
+// Mac Users:                                                                  //
+//    cmd+/ to comment or uncomment each line or block of code                 //
+// Windows Users:                                                              //   
+//    ctrl+/ to comment or uncomment each line or block of code                //
+// For both camps:                                                             //
+//    ctrl+shift+H to access keyboard shortcuts                                //  
+/////////////////////////////////////////////////////////////////////////////////
+
+// Simple texture example ////////////////////////////////////////////////////////
+
+// Define Location
+var loc = [-119.768, 36.808]
+Map.centerObject(ee.Geometry.Point(loc), 16)
+// Create roi
+var roi = ee.Geometry.Point(loc).buffer(2000).bounds()
+
+// NAIP Imagery Collection and filter by date
+var naip = ee.ImageCollection('USDA/NAIP/DOQQ')
+  .filterDate('2014-01-01', '2014-12-31')
+  .filterBounds(ee.Geometry.Point(loc))
+
+// Mosaic NAIP collection
+var naipMosaic = naip.mosaic().clip(roi)
+
+// Define the image projection
+var naip1 = naipMosaic.reproject({
+    crs: 'EPSG:4326',
+    // Fixed display resolution
+    scale: 1
+  })
+
+// Reduce NAIP resolution
+// 3
+var naip3 = naip1
+  .reduceResolution({
+    reducer: ee.Reducer.mean(),
+    maxPixels: 1024
+  })
+  // Request the data at the defined scale and projection
+  .reproject({
+    crs: 'EPSG:4326',
+    // Fixed display resolution
+    scale: 3
+  })
+// 7
+var naip7 = naip1
+  .reduceResolution({
+    reducer: ee.Reducer.mean(),
+    maxPixels: 1024
+  })
+  // Request the data at the defined scale and projection
+  .reproject({
+    crs: 'EPSG:4326',
+    // Fixed display resolution
+    scale: 7
+  })
+   
+// Calculate NDVI
+var ndvi1 = naip1.normalizedDifference(['N', 'R'])
+var ndvi3 = naip3.normalizedDifference(['N', 'R'])
+var ndvi7 = naip7.normalizedDifference(['N', 'R'])
+
+// Define color palette for NDVI display
+var ndvi_palette = 'FFFFFF, CE7E45, DF923D, F1B555, FCD163, 99B718, 74A901, 66A000,' + 
+  '529400, 3E8601, 207401, 056201, 004C00, 023B01, 012E01, 011D01, 011301'
+
+// Define the texture component
+var texture3 = ndvi1.reduceNeighborhood({
+  reducer: ee.Reducer.stdDev(),
+  kernel: ee.Kernel.square(1),
+})
+///////////
+//  PPP  //
+//  PPP  //
+//  PPP  //
+///////////
+
+var texture7 = ndvi1.reduceNeighborhood({
+  reducer: ee.Reducer.stdDev(),
+  kernel: ee.Kernel.square(3),
+})
+///////////////
+//  PPPPPPP  //
+//  PPPPPPP  //
+//  PPPPPPP  //
+//  PPPPPPP  //
+//  PPPPPPP  //
+//  PPPPPPP  //
+//  PPPPPPP  //
+///////////////
+
+// Reduce Texture resolution to match the kernel size
+// Avoid zooming out too much since analysis scale now fixed, you will quickly run out of memory
+// 3
+var texture3Repo = texture3
+  .reduceResolution({
+    reducer: ee.Reducer.mean(),
+    maxPixels: 1024
+  })
+// Request the data at the defined scale and projection
+  .reproject({
+    crs: 'EPSG:4326',
+    // Fixed display resolution
+    scale: 3
+  })
+  
+// 7
+var texture7Repo = texture7
+  .reduceResolution({
+    reducer: ee.Reducer.mean(),
+    maxPixels: 1024
+  })
+// Request the data at the defined scale and projection
+  .reproject({
+    crs: 'EPSG:4326',
+    // Fixed display resolution
+    scale: 7
+  })
+
+// Image with fixed display resolution
+Map.addLayer(naip1, {bands: ['N', 'B', 'G']}, 'NAIP input imagery 1', true)
+Map.addLayer(naip3, {bands: ['N', 'B', 'G']}, 'NAIP output imagery 3', false)
+Map.addLayer(naip7, {bands: ['N', 'B', 'G']}, 'NAIP output imagery 7', false)
+
+// NDVI with fixed display resolution
+Map.addLayer(ndvi1, {min: -1, max: 1, palette: ndvi_palette}, 'NDVI1', false)
+Map.addLayer(ndvi3, {min: -1, max: 1, palette: ndvi_palette}, 'NDVI3', false)
+Map.addLayer(ndvi7, {min: -1, max: 1, palette: ndvi_palette}, 'NDVI7', false)
+
+// Texture with dynamic resolution based on zoom level and image pyramid
+Map.addLayer(texture3, {min: 0, max: 0.1}, 'SD texture of NDVI3', false)
+Map.addLayer(texture7, {min: 0, max: 0.1}, 'SD texture of NDVI7', false)
+
+// Texture with fixed display resolution
+Map.addLayer(texture3Repo, {min: 0, max: 0.1}, 'SD texture of NDVI3 at 3 meter resolution', false)
+Map.addLayer(texture7Repo, {min: 0, max: 0.1}, 'SD texture of NDVI7 at 7 meter resolution', false)
+
+// Helper functions to promote the understanding of image pyramid //////////////
+// Define a panel to display current image display resolution
+var scaleInfoPanel = ui.Panel({
+  style: {
+    position: 'middle-left',
+    width: '150px'
+  }
+})
+
+// Define a label as a place holder
+var infoLabel = ui.Label('Display Res: ...')
+
+// Add label to the panel
+scaleInfoPanel.widgets().set(0, infoLabel)
+
+// Add panel to the map display window
+Map.add(scaleInfoPanel)
+
+// Define a function to update the label using the current display resolution
+function updateLabel(scale) {
+  infoLabel
+    // Only keeping two digits behind the decimal to keep format tidy
+    .setValue('Display Res: ' + scale.toFixed(2))
+}
+
+// Define a function to retrieve the current display resolution
+function imageScale() {
+  ee.Number(Map.getScale())
+    // Send the server side resolution to client side to be run by the updateLabel function
+    .evaluate(updateLabel)
+}
+
+// Run it once to get the initial display resolution
+imageScale()
+// Only trigger the functions when zoom level changes
+Map.onChangeZoom(imageScale) 
