@@ -1,0 +1,56 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Geog 182B TD.3.1                                                            //  
+//                                                                             //
+// Always remember to use 'var' to define an object in JavaScript              //
+// Please use consistent indentation                                           //
+//                                                                             //
+// Please read the comments below                                              //
+// Mac Users:                                                                  //
+//    cmd+/ to comment or uncomment each line or block of code                 //
+// Windows Users:                                                              //   
+//    ctrl+/ to comment or uncomment each line or block of code                //
+// For both camps:                                                             //
+//    ctrl+shift+H to access keyboard shortcuts                                //  
+/////////////////////////////////////////////////////////////////////////////////
+
+// Standard Deviation Stretch example /////////////////////////////////////////// 
+
+// Image over UCLA
+var i = ee.Image('LANDSAT/LC08/C02/T1_TOA/LC08_041036_20160926')
+
+// Zoom in to this image
+Map.centerObject(i,7)
+
+// Calculate image statistics inside the map window
+var mean = i.reduceRegion({
+  reducer: ee.Reducer.mean(), 
+  geometry: Map.getBounds(true), 
+  scale: Map.getScale(),
+})
+var stdDev = i.reduceRegion({
+  reducer: ee.Reducer.sampleStdDev(), 
+  geometry: Map.getBounds(true), 
+  scale: Map.getScale(),
+})
+
+// Define Visualization parameters
+var visParams = {
+  bands: ['B4', 'B3', 'B2'], 
+  // Mean subtract One Standard Deviation
+  min: [
+    ee.Number(mean.get('B4')).subtract(stdDev.get('B4')).getInfo(), 
+    ee.Number(mean.get('B3')).subtract(stdDev.get('B3')).getInfo(), 
+    ee.Number(mean.get('B2')).subtract(stdDev.get('B2')).getInfo()
+  ],
+  // Mean plus One Standard Deviation
+  max: [
+    ee.Number(mean.get('B4')).add(stdDev.get('B4')).getInfo(), 
+    ee.Number(mean.get('B3')).add(stdDev.get('B3')).getInfo(), 
+    ee.Number(mean.get('B2')).add(stdDev.get('B2')).getInfo()
+  ]
+}
+
+// Add image to map window
+Map.addLayer(i, {}, 'Original')
+Map.addLayer(i, visParams, 'Gaussian Stretched')
+
