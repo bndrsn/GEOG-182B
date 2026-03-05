@@ -1,0 +1,79 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Assignemnt #7                                                              //
+// Benjamin Anderson                                                           //
+// Dr. Zhou                                                                    //
+// GEOG 182B                                                                   //
+// 26 Feb 2026                                                                 //
+/////////////////////////////////////////////////////////////////////////////////
+
+// Define SF ROI via FIPS code
+var daCity = ee.FeatureCollection('TIGER/2018/Counties')
+  .filter(ee.Filter.and(ee.Filter.eq('GEOID', '06075'), ee.Filter.eq('STATEFP', '06')))
+
+// Add 1km buffer to capture surrounding water
+var sanFranRoi = daCity.geometry().buffer(10000)
+
+// Fetch Landsat image
+var image = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+  .filterBounds(sanFranRoi)
+  .filterDate('2020-01-01', '2022-12-31')
+  .filter(ee.Filter.lt('CLOUD_COVER', 10))
+  .median()
+  .clip(sanFranRoi)
+
+Map.centerObject(sanFranRoi, 10)
+
+// Modified Normalized Difference Water Index (MNDWI)
+// Better for imagery with urban noise by using the SWIR band instead of NIR
+var mndwi = image.normalizedDifference(['SR_B3', 'SR_B6']).rename('MNDWI')
+
+
+// Select additional NIR band
+// I was initially encountering noise/false positives over land downtown, presumably because of 
+// shadows, so NIR helps further isolate water from the urban setting
+// This gives me the best of both worlds between NDWI and MNDWI
+var nir = image.select('SR_B5')
+
+// Create a histogram of NDWI values
+// This helps me see where I should place my NDWI threshold
+var histogram = ui.Chart.image.histogram({
+  image: mndwi,
+  region: sanFranRoi,
+  scale: 30,
+  minBucketWidth: 0.01
+})
+.setOptions({
+  title: 'MNDWI Histogram',
+  hAxis: {title: 'NDWI value'},
+  vAxis: {title: 'Pixel count'},
+  colors: ['#001F5B'],
+  seriesType: 'bars'
+})
+
+print(histogram)
+
+// Apply threshold and NIR band to create binary water/non-water image
+// Water pixels have MNDWI > 0
+var sfWater = mndwi.gt(-0.01).and(nir.lt(7600)) 
+// 7600 value determined using inspector over noisy/shadowy pixels downtown
+// -0.01 value discovered using histogram distribution
+
+// Display water mask
+Map.addLayer(sfWater, {min: 0, max: 1, palette: ['white', '#001F5B'], opacity: 0.8}, 'Water / Non-Water')
+
+// Create binary layer
+// Binary mask using .eq() to identify water pixels (1=water)
+var sfWaterMask = sfWater.eq(1)
+
+// Update mask to only show water pixels. Land won't be included
+var maskedWater = sfWater.updateMask(sfWaterMask)
+
+// Add to map
+Map.addLayer(
+  maskedWater,
+  {
+    min: 0,
+    max: 1,
+    palette: ['#001F5B']
+  },
+  'Masked Water Layer')
