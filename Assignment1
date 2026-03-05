@@ -1,0 +1,45 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Assignemnt #1                                                               //
+// Benjamin Anderson                                                           //
+// Dr. Zhou                                                                    //
+// GEOG 182B                                                                   //
+// 15 Jan 2026                                                                 //  
+/////////////////////////////////////////////////////////////////////////////////
+
+// Task: compute the average number of days from a list of dates
+
+// Client side processing ///////////////////////////////////////////////////////
+
+// A list of harvest dates.
+var dates = ["2012-08-14", "2013-08-25", "2014-09-01", "2015-08-23"]
+
+// Find the average day of year of harvest by summing the DOYs.
+var sum = 0
+for (var i = 0; i < dates.length; i++) {
+  var date = new Date(dates[i])
+  var year = date.getFullYear()
+  var january1 = new Date(year, 0, 0)
+  // Millisecond since epoch thus the number 1000
+  var day = Math.floor((date - january1) / (1000 * 60 * 60 * 24))
+  sum += day
+}
+
+//Compute the mean
+print ('Client Side:')
+print(sum / dates.length)
+
+// Server side processing ////////////////////////////////////////////////////////
+
+// A list of harvest dates.
+var eeDates = ee.List(dates)
+
+//Convert a date to day of year
+function DayOfYear(date) {
+  return ee.Date(date).getRelative('day', 'year')
+}
+
+//Find the average harvest day of year.
+print ('Server Side:')
+print(eeDates)
+print(eeDates.map(DayOfYear))
+print(eeDates.map(DayOfYear).reduce(ee.Reducer.mean()))
