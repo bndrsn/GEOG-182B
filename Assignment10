@@ -1,0 +1,213 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Assignemnt #10                                                              //
+// Benjamin Anderson                                                           //
+// Dr. Zhou                                                                    //
+// GEOG 182B                                                                   //
+// 19 Mar 2026                                                                 //
+/////////////////////////////////////////////////////////////////////////////////
+
+// Land Surface Temperature /////////////////////////////////////////////////////
+
+// Define Albuquerque roi using FAO GAUL
+// This seems less efficient but it's in the instructions...
+var gaul2 = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level2")
+var city = ee.Feature(gaul2
+  .filter(ee.Filter.and(
+    ee.Filter.eq('ADM1_NAME', 'New Mexico'),
+    ee.Filter.eq('ADM2_NAME', 'Bernalillo')
+  ))
+  .first())
+var albuquerqueRoi = city.geometry()
+Map.centerObject(albuquerqueRoi, 10)
+
+// Define SR Landsat collection
+var sr  = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+
+// This function adds a band for the images' timestamp
+function addTimeBand(image) {
+  return image.addBands(image.metadata('system:time_start')
+    // Convert milliseconds from epoch to years to aid in
+    // interpretation of the following trend calculation
+    .divide(1000 * 60 * 60 * 24 * 365))
+}
+
+// Retrieve SR image collection with time band, NDVI, and LST conversion
+function addLstAndNdvi(image) {
+  var lst = image.select('ST_B10')
+    .multiply(0.00341802).add(149.0)
+    .subtract(273.15)
+    .rename('lst')
+
+  var nir = image.select('SR_B5').multiply(0.0000275).add(-0.2)
+  var red = image.select('SR_B4').multiply(0.0000275).add(-0.2)
+  var ndvi = nir.subtract(red)
+    .divide(nir.add(red))
+    .rename('ndvi')
+
+  return image.addBands(lst).addBands(ndvi)
+}
+
+var albuquerqueSr = sr
+  .filterBounds(albuquerqueRoi)
+  .filterDate('2016-01-01', '2025-12-31')   // filtered to last decade
+  .filter(ee.Filter.lt('CLOUD_COVER', 15))
+  .map(addTimeBand)
+  .map(addLstAndNdvi)
+
+// Visualization: SR true color composite (median)
+var vizParamsSr = {
+  bands: ['SR_B4', 'SR_B3', 'SR_B2'],
+  min: 0,
+  max: 0.25,
+  gamma: [1, 1, 1]
+}
+
+Map.addLayer(
+  albuquerqueSr.median().clip(albuquerqueRoi)
+    .select(['SR_B4', 'SR_B3', 'SR_B2'])
+    .multiply(0.0000275).add(-0.2),
+  vizParamsSr,
+  'SR true color'
+)
+
+// LST map (actual temperatures) (median)
+var lstMedian = albuquerqueSr
+  .select('lst')
+  .median()
+  .clip(albuquerqueRoi)
+
+var vizDict = {
+  title: 'LST (°C)',
+  loc: 'bottom-right',
+  minV: 5,
+  maxV: 45,
+  // Min and max set from a print function of all LST values
+  mapObj: Map,
+  palette: [
+    '040274', '040281', '0502a3', '0502b8', '0502ce', '0502e6',
+    '0602ff', '235cb1', '307ef3', '269db1', '30c8e2', '32d3ef',
+    '3be285', '3ff38f', '86e26f', '3ae237', 'b5e22e', 'd6e21f',
+    'fff705', 'ffd611', 'ffb613', 'ff8b13', 'ff6e08', 'ff500d',
+    'ff0000', 'de0101', 'c21301', 'a71001', '911003'
+  ]
+}
+
+Map.addLayer(lstMedian, {min: vizDict.minV, max: vizDict.maxV, palette: vizDict.palette}, 'Median LST (°C)')
+
+// Median NDVI layer
+var ndviMedian = albuquerqueSr.select('ndvi').median().clip(albuquerqueRoi)
+
+Map.addLayer(
+  ndviMedian,
+  {min: -0.1, max: 0.6, palette: ['brown', 'white', 'darkgreen']},
+  'Median NDVI'
+)
+
+var lstNdviFeatures = albuquerqueSr.map(function(image) {
+  var stats = image.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: albuquerqueRoi,
+    scale: 300,
+    maxPixels: 1e9
+  })
+  return ee.Feature(null, {
+    'meanLst':  stats.get('lst'),
+    'meanNdvi': stats.get('ndvi')
+  })
+})
+
+// Calling a legend function (from Dr. Zhou)
+var myGeeTb = require('users/bodaciouszhou/funcS:addContinuousLegend')
+myGeeTb.addContinuousLegend(vizDict)
+
+// Dual time series chart
+var rescaledCollection = albuquerqueSr.map(function(image) {
+  var ndviScaled = image.select('ndvi').multiply(60).rename('ndvi_scaled')
+  return image.addBands(ndviScaled)
+})
+
+var dualSeriesChart = ui.Chart.image.series({
+  imageCollection: rescaledCollection.select(['lst', 'ndvi_scaled']),
+  region: albuquerqueRoi,
+  reducer: ee.Reducer.mean(),
+  scale: 30,
+  xProperty: 'system:time_start'
+})
+.setSeriesNames(['LST (°C)', 'NDVI × 60'])
+.setOptions({
+  title: 'LST & NDVI Time Series: Albuquerque (Bernalillo County), 2016–2025',
+  hAxis: {title: 'Date', titleTextStyle: {italic: false, bold: true}},
+  vAxis: {
+    title: 'LST (°C) | NDVI × 60 (rescaled for display)',
+    titleTextStyle: {italic: false, bold: true}
+  },
+  lineWidth: 2,
+  colors: ['orange', 'green'],
+  curveType: 'function',
+  interpolateNulls: true
+})
+print(dualSeriesChart)
+
+// Correlaiton image
+var correlationImage = albuquerqueSr
+  .select(['lst', 'ndvi'])
+  .reduce(ee.Reducer.pearsonsCorrelation())
+  .clip(albuquerqueRoi)
+
+// Summary stats
+var corrStats = correlationImage.reduceRegion({
+  reducer: ee.Reducer.mean(),
+  geometry: albuquerqueRoi,
+  scale: 300,
+  maxPixels: 1e9
+})
+print('Mean correlation r (LST vs NDVI):', corrStats.get('correlation'))
+print('Mean p-value (LST vs NDVI):',   corrStats.get('p-value'))
+
+// Per-image spatial correlation between LST and NDVI pixels
+var corrFeatures = albuquerqueSr.map(function(image) {
+  var corr = image.select(['lst', 'ndvi']).reduceRegion({
+    reducer: ee.Reducer.pearsonsCorrelation(),
+    geometry: albuquerqueRoi,
+    scale: 300,
+    maxPixels: 1e9
+  })
+  return ee.Feature(null, {
+    'correlation': corr.get('correlation'),
+    'p-value':     corr.get('p-value'),
+    'date':        image.date().millis()
+  })
+}).filter(ee.Filter.notNull(['correlation', 'p-value']))
+
+var corrChart = ui.Chart.feature.byFeature({
+  features: corrFeatures,
+  xProperty: 'date',
+  yProperties: ['correlation', 'p-value']
+})
+.setChartType('ScatterChart')
+.setOptions({
+  title: 'LST–NDVI Pearson Correlation & p-value Over Time, 2016–2025',
+  hAxis: {title: 'Date', titleTextStyle: {italic: false, bold: true}},
+  vAxis: {title: 'Value', titleTextStyle: {italic: false, bold: true},
+    viewWindow: {min: -1, max: 1}},
+  lineWidth: 2,
+  pointSize: 3,
+  colors: ['blue', 'red'],
+  series: {
+    0: {labelInLegend: 'Pearson r'},
+    1: {labelInLegend: 'p-value'}
+  }
+})
+print(corrChart)
+
+// Analysis //////////////////////////////////////////////
+// The dual-series chart displays the slight fluctuation of NDVI seasonally relative to the 
+// temperature. The peaks in the NDVI concur with the temperatire peaks. However, the NDVI 
+// difference is so much less pronounced likely because the study area is mostly desert. There
+// is not a significant of vegetation to fluctuate in NDVI, and the vegetation that does exist
+// is likely evergree or low-clorphyll shrubs.
+// We see a moderate positive correlation, meaning meaning that across pixels, areas with higher
+// NDVI tend to also have higher LST. The p-value of 0.034 tells me that the correlation is 
+// statistically significant against a 0.05 threshold.
+// These statistical correlations are probably driven by the warm vegetated Rio Grande corridor
+// rather than a true vegetation cooling effect.
