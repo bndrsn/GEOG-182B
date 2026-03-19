@@ -1,0 +1,81 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Geog 182B TD.10.2                                                           //  
+//                                                                             //
+// Always remember to use 'var' to define an object in JavaScript              //
+// Please use consistent indentation                                           //
+//                                                                             //
+// Please uncomment each line or block of code to run                          //
+// Mac Users: cmd+/ to comment or uncomment each line or block of code         //
+// Windows: ctrl+/ to comment or uncomment each line or block of code          //
+//                                                                             //
+// ctrl+shift+H to access keyboard shortcuts                                   //
+/////////////////////////////////////////////////////////////////////////////////
+
+// Image download is very straight forward
+// Image composite download is quite tricky
+
+//Let's first look at planar vs. Geodesic coordinate systems
+var geodesicBnds = ee.Geometry.Rectangle({coords: [-130, 20, -60, 50], geodesic: true})
+var planarBnds = ee.Geometry.Rectangle({coords: [-130, 20, -60, 50], geodesic: false})
+Map.addLayer(geodesicBnds,{},'geodesic')
+Map.addLayer(planarBnds,{},'planar')
+
+// Image ////////////////////////////////////////////////////////////////////////
+
+// // Create a geometry representing an export region.
+// var geometry = ee.Geometry.Rectangle({coords: [-121, 39, -120, 40], geodesic: false})
+// Map.addLayer(geometry,{},'Export Boundary')
+// Map.centerObject(geometry, 2)
+
+// // MODIS is a global asset meaning one image covers the entire globe
+// var modisImage = ee.ImageCollection('MODIS/006/MYD13A1').first()
+
+// // Note the unique way to rescale an image
+// Map.addLayer(modisImage.unitScale(-2000, 10000),{min: 0.15, max: 0.7}, 'MODIS')
+
+// print(modisImage.projection())
+// // Actual resolution of MODIS data is 1/240 degrees 
+// print(modisImage.projection().nominalScale())
+
+// // Export results
+// Export.image.toDrive({
+//   image: modisImage.select('EVI'),
+//   description: 'Image_export', 
+//   folder: 'GEE', 
+//   fileNamePrefix: 'PCS', 
+//   region: geometry,
+//   scale: modisImage.projection().nominalScale().getInfo(),
+//   crs: 'SR-ORG:6974',
+//   skipEmptyTiles: true,// Ocean is empty for land remote sensing, waste of storage space  
+//   fileFormat: 'GeoTIFF', 
+// })
+
+// Composite ///////////////////////////////////////////////////////////////////
+
+// // Create a geometry representing an export region.
+// var geometry = ee.Geometry.Rectangle({coords: [-180, -60, 180, 60], geodesic: false})
+// Map.addLayer(geometry,{},'Export Boundary')
+// Map.centerObject(geometry, 2)
+
+// // I am using MODIS again to avoid unnecessary image aggregation
+// // Just swap your composite image with the MODIS image
+// var modisImage = ee.ImageCollection('MODIS/006/MYD13A1').first()
+
+// Map.addLayer(modisImage.unitScale(-2000, 10000),{min: 0.15, max: 0.7}, 'MODIS')
+
+// // Export results
+// Export.image.toDrive({
+//   image: modisImage.select('EVI'),
+//   description: 'Image_export', 
+//   folder: 'GEE', 
+//   fileNamePrefix: 'GCS', 
+//   region: geometry,
+//   scale: 111319.49079327357,// 1 degree in meters for EPSG:4326
+//   crs: 'EPSG:4326',// WGS84
+//   //maxPixels: 1e13,// May need to increase maxPixels if your task failed 
+//   shardSize: 60,// Default to 256 which is what GEE uses
+//   fileDimensions: [360, 120], // Dimension must be positive multiples of shard size
+//   //fileDimensions: 100,
+//   skipEmptyTiles: true,// Ocean is empty for land remote sensing, waste of storage space 
+//   fileFormat: 'GeoTIFF'
+// })
