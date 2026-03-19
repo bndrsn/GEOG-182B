@@ -1,0 +1,96 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Geog 182B TD.10.1                                                           //  
+//                                                                             //
+// Always remember to use 'var' to define an object in JavaScript              //
+// Please use consistent indentation                                           //
+//                                                                             //
+// Please uncomment each line or block of code to run                          //
+// Mac Users: cmd+/ to comment or uncomment each line or block of code         //
+// Windows: ctrl+/ to comment or uncomment each line or block of code          //
+//                                                                             //
+// ctrl+shift+H to access keyboard shortcuts                                   //
+/////////////////////////////////////////////////////////////////////////////////
+
+// ImageCollection Charts
+
+// VI Timeseries //////////////////////////////////////////////////////////////// 
+
+// Import the example feature collection and subset the forest feature.
+var forest = ee.FeatureCollection('projects/google/charts_feature_example')
+  // Filter to focus on forested area only
+  .filter(ee.Filter.eq('label', 'Forest'))
+Map.addLayer(forest, {}, 'Ecoregions')
+Map.centerObject(forest, 7)
+
+// Load MODIS vegetation indices data and subset a decade of images.
+var vegIndices = ee.ImageCollection('MODIS/006/MOD13A1')
+ .filter(ee.Filter.date('2010-01-01', '2020-01-01'))
+ .select(['NDVI', 'EVI'])
+ 
+// Define the chart and print it to the console.
+var chart =
+  ui.Chart.image
+    .series({
+      imageCollection: vegIndices,
+      region: forest,
+      reducer: ee.Reducer.mean(),
+      scale: 500,
+      xProperty: 'system:time_start'
+    })
+    .setSeriesNames(['EVI', 'NDVI'])
+    .setOptions({
+      title: 'Average Vegetation Index Value by Date for Forest',
+      hAxis: {title: 'Date', titleTextStyle: {italic: false, bold: true}},
+      vAxis: {
+        title: 'Vegetation index (x1e4)',
+        titleTextStyle: {italic: false, bold: true}
+      },
+      lineWidth: 5,
+      colors: ['e37d05', '1d6b99'],
+      curveType: 'function'
+    })
+print(chart)
+// Perform a simple correlation analysis between the two variables
+print(
+  ui.Chart.image.series({
+    imageCollection: vegIndices,
+    region: forest,
+    reducer: ee.Reducer.pearsonsCorrelation(),
+    scale: 900
+  })
+)
+
+// Timeseries Region /////////////////////////////////////////////////////////////
+// Import the example feature collection.
+var ecoregions = ee.FeatureCollection('projects/google/charts_feature_example')
+Map.addLayer(ecoregions, {}, 'Ecoregions')
+Map.centerObject(ecoregions, 5)
+
+// Load MODIS vegetation indices data and subset a decade of images.
+var vegIndices = ee.ImageCollection('MODIS/006/MOD13A1')
+  .filter(ee.Filter.date('2010-01-01', '2020-01-01'))
+  .select(['NDVI', 'EVI']);
+
+// Define the chart and print it to the console.
+var chart =
+  ui.Chart.image
+    .seriesByRegion({
+      imageCollection: vegIndices,
+      band: 'NDVI',
+      regions: ecoregions,
+      reducer: ee.Reducer.mean(),
+      scale: 500,
+      seriesProperty: 'label',
+      xProperty: 'system:time_start'
+    })
+    .setOptions({
+      title: 'Average NDVI Value by Date',
+      hAxis: {title: 'Date', titleTextStyle: {italic: false, bold: true}},
+      vAxis: {
+        title: 'NDVI (x1e4)',
+        titleTextStyle: {italic: false, bold: true}
+      },
+      lineWidth: 5,
+      colors: ['f0af07', '0f8755', '76b349'],
+    })
+print(chart)
