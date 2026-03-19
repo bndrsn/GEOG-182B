@@ -1,0 +1,239 @@
+/////////////////////////////////////////////////////////////////////////////////
+// Assignemnt #9                                                              //
+// Benjamin Anderson                                                           //
+// Dr. Zhou                                                                    //
+// GEOG 182B                                                                   //
+// 12 Mar 2026                                                                 //
+/////////////////////////////////////////////////////////////////////////////////
+
+// Land Surface Temperature /////////////////////////////////////////////////////
+
+// Define Albuquerque roi using FAO GAUL
+// This seems less efficient but it's in the instructions...
+var gaul2 = ee.FeatureCollection("FAO/GAUL_SIMPLIFIED_500m/2015/level2")
+var city = ee.Feature(gaul2
+  .filter(ee.Filter.and(
+    ee.Filter.eq('ADM1_NAME', 'New Mexico'),
+    ee.Filter.eq('ADM2_NAME', 'Bernalillo')
+  ))
+  .first())
+var albuquerqueRoi = city.geometry()
+Map.centerObject(albuquerqueRoi, 10)
+
+// Define SR Landsat collection
+var sr  = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+
+// This function adds a band for the images' timestamp
+function addTimeBand(image) {
+  return image.addBands(image.metadata('system:time_start')
+    // Convert milliseconds from epoch to years to aid in
+    // interpretation of the following trend calculation
+    .divide(1000 * 60 * 60 * 24 * 365))
+}
+
+// Retrieve SR image collection with time band and LST conversion
+function addLstBand(image) {
+  var lst = image.select('ST_B10')
+// Celsius conversion (pulled from USGS site)
+    .multiply(0.00341802).add(149.0)
+    // K to Celsius
+    .subtract(273.15)
+    .rename('lst')
+  return image.addBands(lst)
+}
+
+var albuquerqueSr = sr
+  .filterBounds(albuquerqueRoi)
+  .filterDate('2016-01-01', '2025-12-31')   // filtered to last decade
+  .filter(ee.Filter.lt('CLOUD_COVER', 15))
+  .map(addTimeBand)
+  .map(addLstBand)
+
+// Visualization: SR true color composite (median)
+var vizParamsSr = {
+  bands: ['SR_B4', 'SR_B3', 'SR_B2'],
+  min: 0,
+  max: 0.25,
+  gamma: [1, 1, 1]
+}
+
+Map.addLayer(
+  albuquerqueSr.median().clip(albuquerqueRoi)
+    .select(['SR_B4', 'SR_B3', 'SR_B2'])
+    .multiply(0.0000275).add(-0.2),
+  vizParamsSr,
+  'SR true color'
+)
+
+// LST map (actual temperatures) (median)
+var lstMedian = albuquerqueSr
+  .select('lst')
+  .median()
+  .clip(albuquerqueRoi)
+
+var vizDict = {
+  title: 'LST (°C)',
+  loc: 'bottom-right',
+  minV: 5,
+  maxV: 45,
+  // Min and max set from a print function of all LST values
+  mapObj: Map,
+  palette: [
+    '040274', '040281', '0502a3', '0502b8', '0502ce', '0502e6',
+    '0602ff', '235cb1', '307ef3', '269db1', '30c8e2', '32d3ef',
+    '3be285', '3ff38f', '86e26f', '3ae237', 'b5e22e', 'd6e21f',
+    'fff705', 'ffd611', 'ffb613', 'ff8b13', 'ff6e08', 'ff500d',
+    'ff0000', 'de0101', 'c21301', 'a71001', '911003'
+  ]
+}
+
+Map.addLayer(lstMedian, {min: vizDict.minV, max: vizDict.maxV, palette: vizDict.palette}, 'Median LST (°C)')
+
+// Calling a legend function (from Dr. Zhou)
+var myGeeTb = require('users/bodaciouszhou/funcS:addContinuousLegend')
+myGeeTb.addContinuousLegend(vizDict)
+
+// Non-parametric trend analysis (Sen's Slope) //////////////////////////////////
+// I am going for a Sen's Slope analysis in this case because the cyclical nature
+// of seasons do not create a normal distribution (see: Time Series Chart)
+var lstSensSlope = albuquerqueSr
+  .select(['system:time_start', 'lst'])    // X: time, Y: LST
+  .reduce(ee.Reducer.sensSlope())
+  .clip(albuquerqueRoi)
+
+var trendVizParams = {min: -2, max: 2, palette: ['blue', 'black', 'red']}
+// Min and max found using print slope range during dev
+
+Map.addLayer(
+  lstSensSlope.select('slope'),
+  trendVizParams,
+  'LST Sen\'s Slope (non-parametric) Trend'
+)
+
+// LST Time Series Chart with Sen's Slope trendline
+var lstChart = ui.Chart.image.series({
+  imageCollection: albuquerqueSr.select('lst'),
+  region: albuquerqueRoi,
+  reducer: ee.Reducer.mean(),
+  scale: 30,
+  xProperty: 'system:time_start'
+})
+.setSeriesNames(['Mean LST'])
+.setOptions({
+  title: 'LST Time Series: Albuquerque (Bernalillo County)',
+  hAxis: {title: 'Date', titleTextStyle: {italic: false, bold: true}},
+  vAxis: {title: 'LST (°C)', titleTextStyle: {italic: false, bold: true}},
+  lineWidth: 2,
+  colors: ['orange'],
+  curveType: 'function',
+  trendlines: {
+    0: {
+      color: 'blue',
+      lineWidth: 2,
+      opacity: 0.7,
+      showR2: true,
+      visibleInLegend: true,
+      labelInLegend: "Sen's Slope (Non-Parametric)"
+    }
+  }
+})
+print(lstChart)
+
+// Define points of different land cover types within Albuquerque
+var points = {
+  'Urban Core':  ee.Geometry.Point(-106.65145, 35.08556),
+  'Residential': ee.Geometry.Point(-106.60152, 35.08475),
+  'Riparian':    ee.Geometry.Point(-106.67960, 35.08689),
+  'Desert':      ee.Geometry.Point(-106.75922, 35.13608)
+}
+
+// Run both trend analysis for each point and print results
+Object.keys(points).forEach(function(name) {
+  var pointCollection = albuquerqueSr
+    .select(['system:time_start', 'lst'])
+    .filterBounds(points[name])
+
+  // Non-parametric: sensSlope
+  var sensFit = pointCollection
+    .reduce(ee.Reducer.sensSlope())
+  var sensScale = sensFit.select('slope').reduceRegion({
+    reducer: ee.Reducer.first(),
+    geometry: points[name],
+    scale: 30
+  })
+  print(name + ' - Sen\'s Slope (non-parametric):', sensScale.get('slope'))
+
+// Time series chart
+  var chart = ui.Chart.image.series({
+    imageCollection: albuquerqueSr.select('lst'),
+    region: points[name],
+    reducer: ee.Reducer.first(),
+    scale: 30,
+    xProperty: 'system:time_start'
+  })
+  .setSeriesNames([name])
+  .setOptions({
+    title: 'LST Trend: ' + name,
+    hAxis: {title: 'Date', titleTextStyle: {italic: false, bold: true}},
+    vAxis: {title: 'LST (°C)', titleTextStyle: {italic: false, bold: true}},
+    lineWidth: 2,
+    colors: ['red'],
+  })
+  print(chart)
+})
+
+// Add each point as its own named layer
+Map.addLayer(points['Urban Core'],  {color: 'red'},    'Urban Core: Downtown')
+Map.addLayer(points['Residential'], {color: 'orange'}, 'Residential: Nob Hill')
+Map.addLayer(points['Riparian'],    {color: 'green'},  'Riparian: Rio Grande')
+Map.addLayer(points['Desert'],      {color: 'yellow'}, 'Desert: Petroglyph National Monument')
+
+
+// Find Sen's Slope value at each point
+var pointNames = ['Urban Core', 'Residential', 'Riparian', 'Desert']
+
+var slopeValues = pointNames.map(function(name) {
+  var slope = lstSensSlope.select('slope').reduceRegion({
+    reducer: ee.Reducer.first(),
+    geometry: points[name],
+    scale: 30
+  }).get('slope')
+  return slope
+})
+
+// Build chart from values
+var barChart = ui.Chart.array.values({
+  array: ee.Array(slopeValues),
+  axis: 0,
+  xLabels: pointNames
+})
+.setChartType('ColumnChart')
+.setOptions({
+  title: 'LST Trend Direction by Land Cover Type (Sen\'s Slope), 2016-2025',
+  hAxis: {title: 'Land Cover Type', titleTextStyle: {italic: false, bold: true}},
+  vAxis: {title: 'Slope (°C/year)', titleTextStyle: {italic: false, bold: true},
+    baseline: 0  // draws a line at 0 so warming/cooling is visually obvious
+  },
+  colors: ['red'],
+  bar: {groupWidth: '50%'},
+  legend: {position: 'none'}
+})
+print(barChart)
+
+// Analysis ///////////////////////////////
+// Both methods produced nearly identical slopes across all 4 land cover types.
+// Sen's Slope was selected for its robustness to seasonal cycles and non-normal 
+// pixel distributions.
+// 
+// The LST trend map overall shows a slight blue (negative) trend, indicating cooling,
+// with several small pockets of red, indicating warming.
+// Our bar chart by land type shows a very interesting story that there is somewhat
+// signficant cooling observed over the last decade, especially in the urban core and
+// residential area of albuquerque, indicating quite the opposie of the UHI theory
+// we would expect in a desert city.
+// 
+// Stakeholders:
+// Urban planners can evaluate the effectiveness of heat mitigation efforts. The
+// Bernalillo County health department can use cooling trends for public health planning.
+// Environmental justice advocates can assess whether cooling is distributed equitably
+// across neighborhoods.
